@@ -30,6 +30,8 @@
             padding: 12px;
             margin: 16px 0;
             word-break: break-all;
+            font-family: monospace;
+            font-size: 12px;
         }
         button {
             width: 100%;
@@ -61,6 +63,7 @@
             padding: 10px;
             border-radius: 8px;
             white-space: pre-wrap;
+            word-break: break-all;
         }
         .success { color: #3fb950; }
         .error { color: #f85149; }
@@ -76,7 +79,7 @@
         <div id="walletInfo" class="info" style="display: none;"></div>
         
         <label>ETH summa:</label>
-        <input type="number" id="ethAmount" value="0.01" step="0.001" min="0.001" />
+        <input type="number" id="ethAmount" value="0.005" step="0.001" min="0.001" />
         
         <button id="buyBtn" disabled>💰 Pirkt kredītus</button>
         
@@ -96,14 +99,18 @@
         const ethAmount = document.getElementById('ethAmount');
         const statusEl = document.getElementById('status');
         
+        function showStatus(message, type) {
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+        
         connectBtn.addEventListener('click', async () => {
             try {
                 if (!window.ethereum) {
                     throw new Error('Nav instalēts maks!');
                 }
                 
-                statusEl.textContent = '⏳ Savieno maku...';
-                statusEl.className = 'status';
+                showStatus('⏳ Savieno maku...', '');
                 
                 const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
                 userAddress = accounts[0];
@@ -128,12 +135,10 @@
                 connectBtn.textContent = '✅ Savienots';
                 connectBtn.disabled = true;
                 
-                statusEl.textContent = '✅ Gatavs!';
-                statusEl.className = 'status success';
+                showStatus('✅ Gatavs! Ievadi ETH summu un spied "Pirkt kredītus"!', 'success');
                 
             } catch (e) {
-                statusEl.textContent = '❌ ' + e.message;
-                statusEl.className = 'status error';
+                showStatus('❌ ' + e.message, 'error');
             }
         });
         
@@ -146,8 +151,7 @@
                 }
                 
                 buyBtn.disabled = true;
-                statusEl.textContent = '⏳ Veic ETH pārskaitījumu... Apstiprini Phantom!';
-                statusEl.className = 'status';
+                showStatus('⏳ Veic ETH pārskaitījumu... Apstiprini Phantom!', '');
                 
                 // Veic ETH pārskaitījumu
                 const tx = await signer.sendTransaction({
@@ -155,12 +159,12 @@
                     value: ethers.parseEther(amount)
                 });
                 
-                statusEl.textContent = '⏳ Gaida apstiprinājumu...';
+                showStatus('✅ ETH nosūtīts! TX: ' + tx.hash + '\n\n⏳ Gaida apstiprinājumu...', '');
                 await tx.wait();
                 
-                statusEl.textContent = '✅ ETH nosūtīts! TX: ' + tx.hash + '\n⏳ Iesniedz funding transakciju...';
+                showStatus('✅ ETH apstiprināts!\n\n⏳ Iesniedz funding transakciju...', '');
                 
-                // Iesniedz funding transakciju
+                // Iesniedz funding transakciju ar PAREIZO atslēgu
                 const submitResponse = await fetch('/api/submit-funding', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -169,12 +173,28 @@
                 
                 const submitData = await submitResponse.text();
                 
-                statusEl.textContent = '✅ KREDĪTI NOPIRKTI!\n\nTX: ' + tx.hash + '\n\n' + submitData;
-                statusEl.className = 'status success';
+                // Mēģina izparsēt JSON
+                let parsedData;
+                try {
+                    parsedData = JSON.parse(submitData);
+                } catch {
+                    parsedData = { message: submitData };
+                }
+                
+                if (parsedData.message === 'Transaction credited' && parsedData.creditedTransaction) {
+                    showStatus(
+                        '✅ KREDĪTI NOPIRKTI!\n\n' +
+                        '💰 Winc kredīti: ' + parsedData.creditedTransaction.winstonCreditAmount + '\n' +
+                        '💵 USD ekvivalents: $' + parsedData.creditedTransaction.usdEquivalent + '\n\n' +
+                        'TX: ' + tx.hash,
+                        'success'
+                    );
+                } else {
+                    showStatus('⚠️ Atbilde: ' + submitData, '');
+                }
                 
             } catch (e) {
-                statusEl.textContent = '❌ ' + e.message;
-                statusEl.className = 'status error';
+                showStatus('❌ ' + e.message, 'error');
             } finally {
                 buyBtn.disabled = false;
             }
